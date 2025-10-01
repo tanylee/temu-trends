@@ -1,15 +1,10 @@
 {
-  "name": "temu-trends",
-  "version": "1.0.0",
   "type": "module",
-  "private": false,
   "scripts": {
-    "boards": "node scripts/fetchBoards.js",
-    "pin:url": "node scripts/createPinFromUrl.js",
-    "pin:b64": "node scripts/createPinBase64.js",
-    "pin:bulk": "node scripts/bulkPinsFromJSON.js"
+    "scrape": "node scripts/scrape.js"
   },
   "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
     "node-fetch": "^3.3.2"
   }
 }
