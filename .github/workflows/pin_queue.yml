@@ -1,0 +1,16 @@
+name: build-pin-queue
+on:
+  schedule:
+    - cron: "0 6 * * *"    # раз в сутки генерим 500/день
+  workflow_dispatch: {}
+jobs:
+  queue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 'lts/*' }
+      - run: npm ci
+      - run: node scripts/build_pin_queue.js --target=500
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with: { commit_message: 'chore: update pin_queue (500/day)' }
