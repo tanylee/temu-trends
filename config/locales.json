@@ -1,7 +1,0 @@
-{
-  "US": {"timezone":"America/New_York","daily_share":45},
-  "CA": {"timezone":"America/Toronto","daily_share":10},
-  "UK": {"timezone":"Europe/London","daily_share":15},
-  "DE": {"timezone":"Europe/Berlin","daily_share":15},
-  "FR": {"timezone":"Europe/Paris","daily_share":15}
-}
