@@ -1,0 +1,19 @@
+{
+  "name": "temu-trends",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "collect:trends": "node scripts/collect_trends.js --window=3m && node scripts/collect_seasonal.js && node scripts/score_trends.js && node scripts/merge_trends.js",
+    "map:temu": "node scripts/map_trends_to_temu.js && node scripts/validate_temu_links.js",
+    "build:site": "node scripts/build_landing.js",
+    "queue": "node scripts/build_pin_queue.js --target=500",
+    "pin": "node scripts/pinner_headless.js"
+  },
+  "dependencies": {
+    "dayjs": "^1.11.11",
+    "node-fetch": "^3.3.2",
+    "playwright": "^1.46.0",
+    "slugify": "^1.6.6",
+    "uuid": "^9.0.1"
+  }
+}
