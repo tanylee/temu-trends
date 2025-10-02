@@ -1,0 +1,22 @@
+name: build-site
+on:
+  push:
+    paths:
+      - 'data/products.json'
+      - 'public/**'
+      - 'config/**'
+      - 'scripts/build_landing.js'
+  workflow_dispatch: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 'lts/*' }
+      - run: npm ci
+      - run: node scripts/build_landing.js
+      - env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: npx netlify deploy --dir=public --prod
