@@ -1,0 +1,14 @@
+import fs from 'fs';
+import fetch from 'node-fetch';
+const cookies = JSON.parse(process.env.PINTEREST_COOKIE || '[]');
+
+(async()=>{
+  const cookieHeader = cookies.map(c=>`${c.name}=${c.value}`).join('; ');
+  const res = await fetch('https://www.pinterest.com/resource/PinStatsResource/get/', {
+    method:'GET',
+    headers:{ 'cookie': cookieHeader }
+  });
+  const data = await res.json();
+  fs.writeFileSync('data/pinterest_metrics.json', JSON.stringify(data, null, 2));
+  console.log('✅ Pinterest metrics saved');
+})();
