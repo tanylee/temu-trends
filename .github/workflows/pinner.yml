@@ -1,0 +1,23 @@
+name: pinner
+on:
+  schedule:
+    - cron: "*/6 * * * *"   # ~480/сутки при 2 пинах/запуск
+  workflow_dispatch: {}
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pinner
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 'lts/*' }
+      - run: npm ci
+      - run: npx playwright install --with-deps
+      - env:
+          PINTEREST_COOKIE: ${{ secrets.PINTEREST_COOKIE }}
+          OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
+          OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
+          OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
+        run: node scripts/pinner_headless.js
