@@ -3,9 +3,9 @@ on:
   push:
     paths:
       - 'data/products.json'
-      - 'public/**'
+      - 'public/styles.css'
+      - 'scripts/build_pages.js'
       - 'config/**'
-      - 'scripts/build_landing.js'
   workflow_dispatch: {}
 jobs:
   build:
@@ -15,8 +15,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 'lts/*' }
       - run: npm ci
-      - run: npx playwright install --with-deps
-      - run: node scripts/build_landing.js
+      - run: node scripts/build_pages.js
       - env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
