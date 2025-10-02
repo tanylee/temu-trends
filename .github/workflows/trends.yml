@@ -1,0 +1,23 @@
+name: collect-trends
+on:
+  schedule: [{ cron: '15 5 * * *' }]
+  workflow_dispatch: {}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 'lts/*' }
+      - run: npm ci
+      - env:
+          OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
+          OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
+          OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
+        run: |
+          node scripts/collect_trends.js --window=3m
+          node scripts/collect_seasonal.js
+          node scripts/score_trends.js
+          node scripts/merge_trends.js
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with: { commit_message: 'chore: update trends (3m+seasonal)' }
