@@ -1,10 +1,9 @@
-// scripts/utils/oxylabs_wsa.js
 import fs from "fs/promises";
 
 export async function fetchHTML(url, { geo = "United States", render = true } = {}) {
   const user = process.env.OXYLABS_USER;
   const pass = process.env.OXYLABS_PASS;
-  if (!user || !pass) throw new Error("OXYLABS_USER / OXYLABS_PASS not set");
+  if (!user || !pass) throw new Error("Missing OXYLABS_USER / PASS");
 
   const payload = {
     source: "universal",
@@ -22,15 +21,10 @@ export async function fetchHTML(url, { geo = "United States", render = true } = 
     body: JSON.stringify(payload),
   });
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`WSA HTTP ${res.status}: ${body}`);
-  }
-
-  const data = await res.json();
-  const result = data?.results?.[0];
-  if (!result?.content) throw new Error("WSA empty content");
-  return { html: result.content, status: result.status_code, url: result.url };
+  const json = await res.json();
+  const content = json?.results?.[0]?.content;
+  if (!content) throw new Error("Empty WSA response");
+  return content;
 }
 
 export async function saveJSON(path, data) {
