@@ -88,6 +88,13 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
             "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/builds"
         continue-on-error: true
+        
+      # 11️⃣ Автопостинг Pinterest-пинов
+      - name: Auto-post pins to Pinterest
+        env:
+          PINTEREST_COOKIE: ${{ secrets.PINTEREST_COOKIE }}
+          PINTEREST_BOARD_ID: ${{ secrets.PINTEREST_BOARD_ID }}
+        run: node scripts/post_pinterest_pins.js
 
       # 12️⃣ Telegram уведомление об успехе
       - name: Notify success
