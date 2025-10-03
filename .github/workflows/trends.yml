@@ -17,25 +17,37 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 'lts/*'
+          node-version: '20'   # fetch доступен глобально
 
       - name: Install deps
         run: npm install
 
-      # ⚠️ Быстрая проверка cookie Pinterest (если 401/302 на логин — шлём тревогу)
+      # ✅ Проверка cookie: 200 — OK, 302 без /login/ — OK, иначе fail
       - name: Check Pinterest cookie
         id: cookie
         env:
           PINTEREST_COOKIE: ${{ secrets.PINTEREST_COOKIE }}
         run: |
           node -e '
-          const cookies = JSON.parse(process.env.PINTEREST_COOKIE || "[]");
-          const cookieHeader = cookies.map(c=>`${c.name}=${c.value}`).join("; ");
-          fetch("https://www.pinterest.com/", { headers:{cookie: cookieHeader}, redirect:"manual" })
-            .then(async r => {
-              console.log("Pinterest status:", r.status, r.headers.get("location")||"");
-              if (r.status !== 200) process.exit(2);
-            }).catch(e => { console.error(e); process.exit(2); });
+            const cookies = JSON.parse(process.env.PINTEREST_COOKIE || "[]");
+            const cookieHeader = cookies.map(c=>`${c.name}=${c.value}`).join("; ");
+            const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+            (async () => {
+              const r = await fetch("https://www.pinterest.com/", {
+                method: "GET",
+                headers: {
+                  "cookie": cookieHeader,
+                  "user-agent": UA,
+                  "accept-language": "en-US,en;q=0.9"
+                },
+                redirect: "manual"
+              });
+              const loc = r.headers.get("location") || "";
+              console.log("Pinterest status:", r.status, loc);
+              const isLoginRedirect = loc.includes("/login/");
+              const ok = (r.status === 200) || (r.status === 302 && !isLoginRedirect);
+              if (!ok) process.exit(2);
+            })().catch(e => { console.error(e); process.exit(2); });
           '
 
       - name: Collect 3-month trends
@@ -67,7 +79,7 @@ jobs:
           node score_trends.js
           node merge_trends.js
 
-      # Коммитим обновлённые данные (products.json / trends.json и т.п.)
+      # Коммитим обновлённые данные (products.json / trends.json)
       - name: Commit data
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
