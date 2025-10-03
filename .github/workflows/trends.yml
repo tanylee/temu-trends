@@ -1,25 +1,91 @@
 name: collect-trends
+
 on:
   schedule:
-    - cron: "15 5 * * *"     # ежедневно; при желании увеличим частоту
+    - cron: "5 */6 * * *"   # каждые 6 часов
   workflow_dispatch: {}
+
 jobs:
-  run:
+  trends:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 'lts/*' }
-      - run: npm ci
-      - run: npx playwright install --with-deps
-      - env:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Install deps
+        run: npm ci
+
+      # ⚠️ Быстрая проверка cookie Pinterest (если 401/302 на логин — шлём тревогу)
+      - name: Check Pinterest cookie
+        id: cookie
+        env:
+          PINTEREST_COOKIE: ${{ secrets.PINTEREST_COOKIE }}
+        run: |
+          node -e '
+          const cookies = JSON.parse(process.env.PINTEREST_COOKIE || "[]");
+          const cookieHeader = cookies.map(c=>`${c.name}=${c.value}`).join("; ");
+          fetch("https://www.pinterest.com/", { headers:{cookie: cookieHeader}, redirect:"manual" })
+            .then(async r => {
+              console.log("Pinterest status:", r.status, r.headers.get("location")||"");
+              if (r.status !== 200) process.exit(2);
+            }).catch(e => { console.error(e); process.exit(2); });
+          '
+
+      - name: Collect 3-month trends
+        env:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
           OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
+        run: node collect_trends.js
+
+      - name: Collect seasonal trends
+        env:
+          OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
+          OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
+          OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
+        run: node collect_seasonal.js
+
+      - name: Map trends to Temu
+        env:
+          OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
+          OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
+          OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
+        run: node map_trends_to_temu.js
+
+      - name: Validate Temu links & images
+        run: node validate_temu_links.js
+
+      - name: Score & merge
         run: |
-          node scripts/collect_trends.js --window=3m
-          node scripts/collect_seasonal.js
-          node scripts/score_trends.js
-          node scripts/merge_trends.js
-      - uses: stefanzweifel/git-auto-commit-action@v5
-        with: { commit_message: 'chore: update trends (3m + seasonal)' }
+          node score_trends.js
+          node merge_trends.js
+
+      # Коммитим обновлённые данные (products.json / trends.json и т.п.)
+      - name: Commit data
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update products and trends data"
+
+      # === Telegram notify ===
+      - name: Notify success
+        if: ${{ success() }}
+        run: |
+          MSG="✅ collect-trends OK · Run #${{ github.run_number }} · Ref ${{ github.ref_name }}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="$MSG"
+
+      - name: Notify failure
+        if: ${{ failure() }}
+        run: |
+          MSG="❌ collect-trends FAILED · Commit ${{ github.sha }}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="$MSG"
