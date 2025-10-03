@@ -1,113 +1,111 @@
 name: trends
 
 on:
-  schedule:
-    - cron: "0 */3 * * *" # запуск каждые 3 часа
   workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *" # каждые 6 часов
+
+permissions:
+  contents: write
 
 jobs:
   trends:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      # 1️⃣ Клонирование репозитория
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_PAT }}
-          persist-credentials: true
 
-      # 2️⃣ Установка Node.js
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
+          cache: "npm"
 
-      # 3️⃣ Установка зависимостей
-      - name: Install dependencies
+      - name: Install deps
         run: |
-          npm ci || npm install
+          npm install --no-audit --no-fund
 
-      # 4️⃣ Сбор 3-месячных трендов (Pinterest + TikTok)
+      - name: Check Pinterest cookie
+        env:
+          PINTEREST_COOKIE: ${{ secrets.PINTEREST_COOKIE }}
+        run: |
+          node -e '
+          const cookies = JSON.parse(process.env.PINTEREST_COOKIE||"[]");
+          const header = cookies.map(c=>`${c.name}=${c.value}`).join("; ");
+          fetch("https://www.pinterest.com/", { headers: { cookie: header }, redirect:"manual"})
+            .then(r => {
+              console.log("Pinterest status:", r.status, r.headers.get("location")||"");
+              if (r.status !== 200) process.exit(2);
+            })
+            .catch(e => { console.error(e); process.exit(2); });
+          '
+
       - name: Collect 3-month trends
         env:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
-        run: node scripts/collect_trends.js
+          OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
+        run: |
+          npm run trends:collect
 
-      # 5️⃣ Сбор сезонных трендов (ежегодные пики)
       - name: Collect seasonal trends
-        env:
-          OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
-          OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
-        run: node scripts/collect_seasonal.js
+        run: |
+          npm run trends:seasonal
 
-      # 6️⃣ Сбор региональных трендов (TikTok + Pinterest + Instagram)
-      - name: Collect regional trends
-        env:
-          OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
-          OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
-        run: node scripts/collect_trends_regions.js
+      - name: Aggregate trends
+        run: |
+          npm run trends:aggregate
 
-      # 7️⃣ Валидация Temu ссылок (если есть)
-      - name: Validate Temu links
-        run: node scripts/validate_temu_links.js || echo "no validate script"
+      - name: Build pages
+        run: |
+          npm run build:pages
 
-      # 8️⃣ Сопоставление трендов с Temu товарами (опционально)
-      - name: Map trends to Temu products
-        run: node scripts/map_trends_to_temu.js || echo "no map script"
-
-      # 9️⃣ Агрегация глобальных трендов (Top-50)
-      - name: Aggregate all trends (global top 50)
-        run: node scripts/aggregate_trends.js
-
-      # 🔟 Коммит всех данных
       - name: Commit data
-        uses: EndBug/add-and-commit@v9
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          add: |
-            data/products.json
-            data/trends_raw_3m.json
-            data/trends_raw_seasonal.json
-            data/trends_regions.json
-            data/trends_aggregated.json
-          message: "chore: update all trends data (3m + seasonal + regions + aggregated)"
-          push: true
-          author_name: moodette-bot
-          author_email: moodette-bot@users.noreply.github.com
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          commit_message: "chore: update products and trends data"
+          file_pattern: |
+            data/**
+            public/**
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
 
-      # 11️⃣ Автодеплой на Netlify
       - name: Trigger Netlify build
         if: success()
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
-          curl -X POST -d '{}' \
-            -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
-            "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/builds"
-        continue-on-error: true
-        
-      # 11️⃣ Автопостинг Pinterest-пинов
+          curl -s -X POST \
+            -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+            "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/builds" \
+          | jq -r '.state // "queued"'
+
+      # (опционально) автопост в Pinterest — если у тебя уже рабочий скрипт
       - name: Auto-post pins to Pinterest
+        if: success()
         env:
           PINTEREST_COOKIE: ${{ secrets.PINTEREST_COOKIE }}
-          PINTEREST_BOARD_ID: ${{ secrets.PINTEREST_BOARD_ID }}
-        run: node scripts/post_pinterest_pins.js
+        run: |
+          npm run post:pins
 
-      # 12️⃣ Telegram уведомление об успехе
-      - name: Notify success
+      - name: Notify success (Telegram)
         if: success()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT:  ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
-            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="✅ TEMU Trends (3m + Seasonal + Regions + Aggregated Top50) обновлены и сайт redeployed"
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="$TG_CHAT" \
+            --data-urlencode text="✅ TEMU Trends: обновление успешно 🚀"
 
-      # 13️⃣ Telegram уведомление об ошибке
-      - name: Notify failure
+      - name: Notify failure (Telegram)
         if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT:  ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
-            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="❌ Ошибка в TEMU Trends workflow. Проверь логи Actions."
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="$TG_CHAT" \
+            --data-urlencode text="❌ Ошибка в TEMU Trends workflow. Проверь логи Actions."
