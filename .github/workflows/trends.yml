@@ -2,7 +2,7 @@ name: collect-trends
 
 on:
   schedule:
-    - cron: "5 */6 * * *"   # каждые 6 часов
+    - cron: "5 */6 * * *"   # запуск каждые 6 часов
   workflow_dispatch: {}
 
 jobs:
@@ -31,8 +31,10 @@ jobs:
           ls -la scripts || true
           echo "::endgroup::"
 
-      # ✅ Cookie OK, если 200 ИЛИ 302 без /login/
+      # ✅ Мягкая проверка Pinterest cookie:
+      # 200 — OK, 302 без /login/ — OK; иначе шаг вернёт код 2, но пайплайн НЕ остановится
       - name: Check Pinterest cookie
+        continue-on-error: true
         id: cookie
         env:
           PINTEREST_COOKIE: ${{ secrets.PINTEREST_COOKIE }}
@@ -44,11 +46,7 @@ jobs:
             (async () => {
               const r = await fetch("https://www.pinterest.com/", {
                 method: "GET",
-                headers: {
-                  "cookie": cookieHeader,
-                  "user-agent": UA,
-                  "accept-language": "en-US,en;q=0.9"
-                },
+                headers: { "cookie": cookieHeader, "user-agent": UA, "accept-language": "en-US,en;q=0.9" },
                 redirect: "manual"
               });
               const loc = r.headers.get("location") || "";
