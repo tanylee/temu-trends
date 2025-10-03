@@ -2,7 +2,7 @@ name: collect-trends
 
 on:
   schedule:
-    - cron: "5 */6 * * *"   # каждые 6 часов
+    - cron: "5 */6 * * *"     # запуск каждые 6 часов
   workflow_dispatch: {}
 
 jobs:
@@ -25,27 +25,31 @@ jobs:
       - name: Ensure Playwright package
         run: npm ls playwright || npm i -D playwright
 
+      # ⚡ Кэш самих браузеров Playwright (а не node_modules)
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
-          path: ~/.cache/ms-playwright
+          path: /home/runner/.cache/ms-playwright
           key: ms-playwright-${{ runner.os }}-chromium
           restore-keys: |
             ms-playwright-${{ runner.os }}-
 
+      # 🌐 Скачиваем Chromium + системные зависимости в Абсолютный путь
       - name: Install Playwright Chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
         run: npx playwright install --with-deps chromium
 
       - name: Debug repo tree
         run: |
           echo "::group::TREE"
-          ls -la
+          pwd && ls -la
           echo
           echo "./scripts:"
           ls -la scripts || true
           echo "::endgroup::"
 
-      # ✅ 200 — OK, 302 без /login|auth|signup — тоже OK (не ломаем пайплайн)
+      # ✅ 200 — OK; 302 без /login|auth|signup — тоже OK
       - name: Check Pinterest cookie
         id: cookie
         continue-on-error: true
@@ -79,7 +83,7 @@ jobs:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
           OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
-          PLAYWRIGHT_BROWSERS_PATH: ~/.cache/ms-playwright
+          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
         run: node scripts/collect_trends.js
 
       - name: Collect seasonal trends
@@ -87,7 +91,7 @@ jobs:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
           OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
-          PLAYWRIGHT_BROWSERS_PATH: ~/.cache/ms-playwright
+          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
         run: node scripts/collect_seasonal.js
 
       - name: Map trends to Temu
@@ -110,6 +114,7 @@ jobs:
         with:
           commit_message: "chore: update products and trends data"
 
+      # === Telegram notify ===
       - name: Notify success
         if: ${{ success() }}
         run: |
