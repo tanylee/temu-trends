@@ -1,24 +1,83 @@
-# .github/workflows/trends.yml  — фрагменты
+name: trends
+on:
+  schedule:
+    - cron: "0 */6 * * *"  # каждые 6 часов
+  workflow_dispatch:
 
-# 1) Node без кэша lock-файла
+jobs:
+  trends:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          # cache: npm  # УБРАНО, чтобы не требовался package-lock.json
+          cache: "npm"
 
-# 2) Установка зависимостей без lock-файла
       - name: Install deps
+        run: npm ci
+
+      - name: Collect 3-month trends
+        env:
+          OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
+          OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
+          OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
+        run: node scripts/collect_trends.js
+
+      - name: Collect seasonal trends
+        run: node scripts/collect_seasonal.js
+
+      - name: Collect regional trends
+        run: node scripts/collect_trends_regions.js
+
+      - name: Map trends to Temu
+        run: node scripts/map_trends_to_temu.js
+
+      - name: Validate Temu links & images
+        run: node scripts/validate_temu_links.js
+
+      - name: Score & merge
         run: |
-          npm install --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          node scripts/score_trends.js
+          node scripts/merge_trends.js
+          node scripts/aggregate_trends.js
 
-# … остальной пайплайн …
+      - name: Commit data
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update products and trends data"
+          file_pattern: data/*.json
+          branch: main
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          commit_author: tanylee <221796834+tanylee@users.noreply.github.com>
+          push_options: "--force"
+          create_branch: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
 
-# 3) Notify failure (исправленный curl)
+      - name: Trigger Netlify build
+        run: |
+          curl -X POST -d '{}' ${{ secrets.NETLIFY_AUTH_TOKEN }}
+
+      - name: Auto-post pins to Pinterest
+        env:
+          PINTEREST_COOKIE: ${{ secrets.PINTEREST_COOKIE }}
+        run: node scripts/post_pinterest_pins.js
+
+      - name: Notify success
+        if: success()
+        run: |
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+          -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+          -d text="✅ TEMU Trends успешно обновлены!"
+
       - name: Notify failure
         if: failure()
         run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode text="❌ Ошибка в TEMU Trends workflow. Проверь логи Actions."
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+          -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+          -d text="❌ Ошибка в TEMU Trends workflow. Проверь логи Actions."
