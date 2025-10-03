@@ -1,19 +1,41 @@
-import fs from 'fs';
-const seeds = [
-  { kw: 'fall decor', season:['fall']},
-  { kw: 'back to school', season:['back-to-school']},
-  { kw: 'holiday candles', season:['holiday']}
+// scripts/collect_seasonal.js
+import { fetchHTML, saveJSON } from "./utils/oxylabs_wsa.js";
+import { load } from "cheerio";
+
+const OUT = "data/trends_raw_seasonal.json";
+const QUERIES = [
+  "Halloween costumes",
+  "Black Friday gifts",
+  "Christmas ornaments",
+  "Winter outfits",
+  "New Year party",
 ];
-const out = seeds.map(s=>({
-  id:`seasonal:${s.kw}:${Date.now()}`,
-  platform:'mixed',
-  hashtags:[s.kw.replace(/\s+/g,'')],
-  keywords:[s.kw],
-  engagement:{ likes:90000, comments:1500, shares:1000 },
-  lang:'en',
-  country_signals:['US','CA','UK','DE','FR'],
-  season:s.season,
-  ts:Math.floor(Date.now()/1000)
-}));
-fs.writeFileSync('data/trends_raw_seasonal.json', JSON.stringify(out,null,2));
-console.log('saved data/trends_raw_seasonal.json');
+
+async function pinterestSearch(q) {
+  const url = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(q)}`;
+  const { html } = await fetchHTML(url, { geo: "United States" });
+  const $ = load(html);
+
+  const pins = [];
+  $("a[href*='/pin/']").slice(0, 25).each((_, a) => {
+    pins.push({ url: $(a).attr("href"), title: $(a).attr("aria-label") || $(a).text().trim() || "" });
+  });
+
+  return { q, pins, count: pins.length };
+}
+
+(async () => {
+  try {
+    const items = [];
+    for (const q of QUERIES) {
+      console.log("▶ Seasonal:", q);
+      const res = await pinterestSearch(q);
+      items.push(res);
+    }
+    await saveJSON(OUT, { items, window: "seasonal", fetchedAt: new Date().toISOString() });
+    console.log(`✅ Saved ${OUT}`);
+  } catch (e) {
+    console.error("❌ collect_seasonal failed:", e);
+    process.exit(1);
+  }
+})();
