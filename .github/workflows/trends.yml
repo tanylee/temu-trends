@@ -20,7 +20,7 @@ jobs:
           node-version: 'lts/*'
 
       - name: Install deps
-        run: npm ci
+        run: npm install
 
       # ⚠️ Быстрая проверка cookie Pinterest (если 401/302 на логин — шлём тревогу)
       - name: Check Pinterest cookie
