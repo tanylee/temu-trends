@@ -2,7 +2,7 @@ name: trends
 
 on:
   schedule:
-    - cron: "0 */3 * * *"  # каждые 3 часа
+    - cron: "0 */3 * * *" # запуск каждые 3 часа
   workflow_dispatch:
 
 jobs:
@@ -19,50 +19,51 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           persist-credentials: true
 
-      # 2️⃣ Node.js окружение
+      # 2️⃣ Установка Node.js
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install deps
+      # 3️⃣ Установка зависимостей
+      - name: Install dependencies
         run: |
           npm ci || npm install
 
-      # 3️⃣ Сбор трендов за 3 месяца
-      - name: Collect 3-month trends (WSA)
+      # 4️⃣ Сбор 3-месячных трендов (Pinterest + TikTok)
+      - name: Collect 3-month trends
         env:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
         run: node scripts/collect_trends.js
 
-      # 4️⃣ Сбор сезонных трендов
-      - name: Collect seasonal trends (WSA)
+      # 5️⃣ Сбор сезонных трендов (ежегодные пики)
+      - name: Collect seasonal trends
         env:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
         run: node scripts/collect_seasonal.js
 
-      # 5️⃣ Сбор региональных трендов (TikTok, Pinterest, Instagram)
-      - name: Collect regional trends (TikTok, Pinterest, Instagram)
+      # 6️⃣ Сбор региональных трендов (TikTok + Pinterest + Instagram)
+      - name: Collect regional trends
         env:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
         run: node scripts/collect_trends_regions.js
 
-      # 6️⃣ Маппинг, валидация и скоринг (если есть скрипты Temu)
-      - name: Map trends to Temu
-        run: node scripts/map_trends_to_temu.js || echo "no map script"
-
-      - name: Validate Temu links & images
+      # 7️⃣ Валидация Temu ссылок (если есть)
+      - name: Validate Temu links
         run: node scripts/validate_temu_links.js || echo "no validate script"
 
-      - name: Score & merge
-        run: |
-          node scripts/score_trends.js || echo "no score"
-          node scripts/merge_trends.js || echo "no merge"
+      # 8️⃣ Сопоставление трендов с Temu товарами (опционально)
+      - name: Map trends to Temu products
+        run: node scripts/map_trends_to_temu.js || echo "no map script"
 
-      # 7️⃣ Коммит данных в main
+      # 9️⃣ Агрегация глобальных трендов (Top-50)
+      - name: Aggregate all trends (global top 50)
+        run: node scripts/aggregate_trends.js
+
+      # 🔟 Коммит всех данных
       - name: Commit data
         uses: EndBug/add-and-commit@v9
         with:
@@ -71,35 +72,35 @@ jobs:
             data/trends_raw_3m.json
             data/trends_raw_seasonal.json
             data/trends_regions.json
-            data/trends_scored_3m.json
-            data/trends_scored_seasonal.json
-          message: "chore: update all trends data (3m + seasonal + regions)"
+            data/trends_aggregated.json
+          message: "chore: update all trends data (3m + seasonal + regions + aggregated)"
           push: true
           author_name: moodette-bot
           author_email: moodette-bot@users.noreply.github.com
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
 
-      # 8️⃣ Автодеплой Netlify
+      # 11️⃣ Автодеплой на Netlify
       - name: Trigger Netlify build
         if: success()
         run: |
           curl -X POST -d '{}' \
-          -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
-          "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/builds"
+            -H "Authorization: Bearer ${{ secrets.NETLIFY_AUTH_TOKEN }}" \
+            "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/builds"
         continue-on-error: true
 
-      # 9️⃣ Telegram уведомления
+      # 12️⃣ Telegram уведомление об успехе
       - name: Notify success
         if: success()
         run: |
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
-          -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-          -d text="✅ TEMU Trends (3m + Seasonal + Regions) обновлены и сайт redeployed"
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="✅ TEMU Trends (3m + Seasonal + Regions + Aggregated Top50) обновлены и сайт redeployed"
 
+      # 13️⃣ Telegram уведомление об ошибке
       - name: Notify failure
         if: failure()
         run: |
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
-          -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-          -d text="❌ Ошибка в TEMU Trends workflow. Проверь логи Actions."
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="❌ Ошибка в TEMU Trends workflow. Проверь логи Actions."
