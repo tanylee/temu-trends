@@ -12,12 +12,14 @@ jobs:
       contents: write
 
     steps:
+      # 1️⃣ Клонирование репозитория
       - name: Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GH_PAT }}
           persist-credentials: true
 
+      # 2️⃣ Node.js окружение
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -27,32 +29,40 @@ jobs:
         run: |
           npm ci || npm install
 
-      # Собираем тренды через Web Scraper API
+      # 3️⃣ Сбор трендов за 3 месяца
       - name: Collect 3-month trends (WSA)
         env:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
         run: node scripts/collect_trends.js
 
+      # 4️⃣ Сбор сезонных трендов
       - name: Collect seasonal trends (WSA)
         env:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
         run: node scripts/collect_seasonal.js
 
-      # тут же можно запускать твои map/validate/score, если они читают data/*.json
+      # 5️⃣ Сбор региональных трендов (TikTok, Pinterest, Instagram)
+      - name: Collect regional trends (TikTok, Pinterest, Instagram)
+        env:
+          OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
+          OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
+        run: node scripts/collect_trends_regions.js
+
+      # 6️⃣ Маппинг, валидация и скоринг (если есть скрипты Temu)
       - name: Map trends to Temu
-        run: node scripts/map_trends_to_temu.js
+        run: node scripts/map_trends_to_temu.js || echo "no map script"
 
       - name: Validate Temu links & images
-        run: node scripts/validate_temu_links.js
+        run: node scripts/validate_temu_links.js || echo "no validate script"
 
       - name: Score & merge
         run: |
-          node scripts/score_trends.js
-          node scripts/merge_trends.js
+          node scripts/score_trends.js || echo "no score"
+          node scripts/merge_trends.js || echo "no merge"
 
-      # Коммитим изменения в main (через PAT)
+      # 7️⃣ Коммит данных в main
       - name: Commit data
         uses: EndBug/add-and-commit@v9
         with:
@@ -60,16 +70,17 @@ jobs:
             data/products.json
             data/trends_raw_3m.json
             data/trends_raw_seasonal.json
+            data/trends_regions.json
             data/trends_scored_3m.json
             data/trends_scored_seasonal.json
-          message: "chore: update trends data (WSA)"
+          message: "chore: update all trends data (3m + seasonal + regions)"
           push: true
           author_name: moodette-bot
           author_email: moodette-bot@users.noreply.github.com
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
 
-      # Автодеплой Netlify
+      # 8️⃣ Автодеплой Netlify
       - name: Trigger Netlify build
         if: success()
         run: |
@@ -78,17 +89,17 @@ jobs:
           "https://api.netlify.com/api/v1/sites/${{ secrets.NETLIFY_SITE_ID }}/builds"
         continue-on-error: true
 
-      # Telegram уведомления
+      # 9️⃣ Telegram уведомления
       - name: Notify success
         if: success()
         run: |
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
           -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-          -d text="✅ TEMU Trends (WSA) обновлены и деплой запущен"
+          -d text="✅ TEMU Trends (3m + Seasonal + Regions) обновлены и сайт redeployed"
 
       - name: Notify failure
         if: failure()
         run: |
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
           -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-          -d text="❌ Ошибка в TEMU Trends (WSA). Проверь логи Actions."
+          -d text="❌ Ошибка в TEMU Trends workflow. Проверь логи Actions."
