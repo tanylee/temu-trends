@@ -1,22 +1,61 @@
 name: build-site
+
 on:
   push:
     paths:
       - 'data/products.json'
-      - 'public/styles.css'
+      - 'data/trends.json'
       - 'scripts/build_pages.js'
+      - 'public/styles.css'
       - 'config/**'
   workflow_dispatch: {}
+
+concurrency:
+  group: netlify-prod
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 'lts/*' }
-      - run: npm ci
-      - run: node scripts/build_pages.js
-      - env:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build pages (index + country pages)
+        env:
+          PLAUSIBLE_DOMAIN: ${{ secrets.PLAUSIBLE_DOMAIN }}
+          PLAUSIBLE_SCRIPT_URL: ${{ secrets.PLAUSIBLE_SCRIPT_URL }}
+        run: node scripts/build_pages.js
+
+      - name: Deploy to Netlify (prod)
+        env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: npx netlify deploy --dir=public --prod
+
+      # === Telegram notify ===
+      - name: Notify success
+        if: ${{ success() }}
+        run: |
+          MSG="🚀 build-site deployed · Run #${{ github.run_number }} · https://temu-trends.netlify.app"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="$MSG"
+
+      - name: Notify failure
+        if: ${{ failure() }}
+        run: |
+          MSG="🛑 build-site FAILED · Commit ${{ github.sha }}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="$MSG"
