@@ -2,13 +2,13 @@ name: collect-trends
 
 on:
   schedule:
-    - cron: "5 */6 * * *"   # запуск каждые 6 часов
+    - cron: "5 */6 * * *"   # каждые 6 часов
   workflow_dispatch: {}
 
 jobs:
   trends:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -20,7 +20,24 @@ jobs:
           node-version: '20'
 
       - name: Install deps
-        run: npm install
+        run: npm install --no-audit --no-fund
+
+      # 🧰 Если playwright не в package.json (на всякий случай) — поставим
+      - name: Ensure Playwright package
+        run: npm ls playwright || npm i -D playwright
+
+      # ⚡️ Кэш браузеров Playwright (ускоряет повторы)
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-chromium
+          restore-keys: |
+            ms-playwright-${{ runner.os }}-
+
+      # 🌐 Ставим Chromium + системные зависимости
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Debug repo tree
         run: |
@@ -31,8 +48,7 @@ jobs:
           ls -la scripts || true
           echo "::endgroup::"
 
-      # ✅ Мягкая проверка Pinterest cookie:
-      # 200 — OK, 302 без /login/ — OK; иначе шаг вернёт код 2, но пайплайн НЕ остановится
+      # ✅ Мягкая проверка Pinterest cookie
       - name: Check Pinterest cookie
         continue-on-error: true
         id: cookie
@@ -62,6 +78,7 @@ jobs:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
           OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
+          PLAYWRIGHT_BROWSERS_PATH: ~/.cache/ms-playwright
         run: node scripts/collect_trends.js
 
       - name: Collect seasonal trends
@@ -69,6 +86,7 @@ jobs:
           OXYLABS_USER: ${{ secrets.OXYLABS_USER }}
           OXYLABS_PASS: ${{ secrets.OXYLABS_PASS }}
           OXY_ENDPOINT: ${{ secrets.OXY_ENDPOINT }}
+          PLAYWRIGHT_BROWSERS_PATH: ~/.cache/ms-playwright
         run: node scripts/collect_seasonal.js
 
       - name: Map trends to Temu
